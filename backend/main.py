@@ -17,7 +17,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-from parsers import DouyinParser, KuaishouParser, XiaohongshuParser
+from parsers import DouyinParser, KuaishouParser, XiaohongshuParser, AggregatorParser
 
 # --- Rate limiter ---
 limiter = Limiter(key_func=get_remote_address)
@@ -72,7 +72,9 @@ class ParseResponse(BaseModel):
 
 
 # --- Parsers registry ---
-PARSERS = [DouyinParser, KuaishouParser, XiaohongshuParser]
+# AggregatorParser first (uses third-party APIs, most reliable for all platforms)
+# Fall back to local parsers if aggregator fails
+PARSERS = [AggregatorParser, DouyinParser, KuaishouParser, XiaohongshuParser]
 
 
 def _clean_url(raw: str) -> str:
