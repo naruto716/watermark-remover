@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>去水印下载工具</title>
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg: #0a0a1a;
+  --surface: rgba(255,255,255,0.05);
+  --glass: rgba(255,255,255,0.08);
+  --glass-border: rgba(255,255,255,0.12);
+  --text: #e8e8f0;
+  --text-dim: #8888aa;
+  --accent: #6c5ce7;
+  --accent-glow: rgba(108,92,231,0.4);
+  --success: #00cec9;
+  --danger: #ff6b6b;
+  --radius: 16px;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Animated background */
+body::before {
+  content: '';
+  position: fixed;
+  top: -50%; left: -50%;
+  width: 200%; height: 200%;
+  background: radial-gradient(ellipse at 20% 50%, rgba(108,92,231,0.12) 0%, transparent 50%),
+              radial-gradient(ellipse at 80% 20%, rgba(0,206,201,0.08) 0%, transparent 50%),
+              radial-gradient(ellipse at 50% 80%, rgba(253,121,168,0.06) 0%, transparent 50%);
+  animation: bgShift 20s ease-in-out infinite alternate;
+  z-index: -1;
+}
+@keyframes bgShift {
+  0% { transform: translate(0, 0) rotate(0deg); }
+  100% { transform: translate(-5%, 3%) rotate(3deg); }
+}
+
+.container {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 40px 20px 60px;
+}
+
+/* Header */
+.header {
+  text-align: center;
+  margin-bottom: 40px;
+}
+.header h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #6c5ce7, #00cec9);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 8px;
+}
+.header p {
+  color: var(--text-dim);
+  font-size: 0.95rem;
+}
+
+/* Glass card */
+.card {
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 28px;
+  margin-bottom: 24px;
+}
+
+/* Input area */
+.input-group {
+  display: flex;
+  gap: 12px;
+}
+.input-group input {
+  flex: 1;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  padding: 14px 18px;
+  color: var(--text);
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+.input-group input::placeholder { color: var(--text-dim); }
+.input-group input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 14px 28px;
+  border: none;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+  white-space: nowrap;
+}
+.btn-primary {
+  background: linear-gradient(135deg, #6c5ce7, #a855f7);
+  color: #fff;
+  box-shadow: 0 4px 15px var(--accent-glow);
+}
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 25px var(--accent-glow);
+}
+.btn-primary:active { transform: translateY(0); }
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-download {
+  background: linear-gradient(135deg, #00cec9, #00b894);
+  color: #fff;
+  padding: 12px 24px;
+  text-decoration: none;
+  font-size: 0.95rem;
+}
+.btn-download:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 15px rgba(0,206,201,0.4);
+}
+
+/* Supported platforms */
+.platforms {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+.platform-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 20px;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+.platform-tag .dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+}
+.dot-douyin { background: #fe2c55; }
+.dot-kuaishou { background: #ff4906; }
+.dot-xhs { background: #ff2442; }
+
+/* Loading spinner */
+.spinner {
+  width: 20px; height: 20px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  display: none;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Error message */
+.error {
+  background: rgba(255,107,107,0.1);
+  border: 1px solid rgba(255,107,107,0.3);
+  border-radius: 12px;
+  padding: 14px 18px;
+  color: var(--danger);
+  font-size: 0.95rem;
+  display: none;
+  margin-top: 20px;
+}
+
+/* Result card */
+.result {
+  display: none;
+  margin-top: 20px;
+  animation: fadeUp 0.4s ease;
+}
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.result-header {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.result-cover {
+  width: 120px;
+  height: 120px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.result-info {
+  flex: 1;
+  min-width: 0;
+}
+.result-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.5;
+  margin-bottom: 8px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.result-meta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.meta-tag {
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+.meta-platform {
+  background: rgba(108,92,231,0.2);
+  color: #a78bfa;
+}
+.meta-type {
+  background: rgba(0,206,201,0.2);
+  color: #00cec9;
+}
+
+/* Image grid */
+.image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.image-grid a {
+  display: block;
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+  aspect-ratio: 1;
+}
+.image-grid img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s;
+}
+.image-grid a:hover img { transform: scale(1.05); }
+.image-grid .dl-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.3s;
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+.image-grid a:hover .dl-overlay { opacity: 1; }
+
+.actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Footer */
+.footer {
+  text-align: center;
+  margin-top: 48px;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+/* Mobile */
+@media (max-width: 520px) {
+  .container { padding: 24px 16px 40px; }
+  .header h1 { font-size: 1.6rem; }
+  .input-group { flex-direction: column; }
+  .btn { width: 100%; }
+  .result-header { flex-direction: column; align-items: center; text-align: center; }
+  .result-cover { width: 160px; height: 160px; }
+  .result-meta { justify-content: center; }
+  .image-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
+  .actions { flex-direction: column; }
+  .actions .btn-download { width: 100%; text-align: center; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>✨ 去水印下载工具</h1>
+    <p>粘贴分享链接，一键获取无水印视频和图片</p>
+  </div>
+
+  <div class="card">
+    <div class="input-group">
+      <input type="text" id="urlInput" placeholder="粘贴抖音/快手/小红书分享链接..." autocomplete="off">
+      <button class="btn btn-primary" id="parseBtn" onclick="parseLink()">
+        <span id="btnText">解析</span>
+        <div class="spinner" id="spinner"></div>
+      </button>
+    </div>
+    <div class="platforms">
+      <span class="platform-tag"><span class="dot dot-douyin"></span>抖音</span>
+      <span class="platform-tag"><span class="dot dot-kuaishou"></span>快手</span>
+      <span class="platform-tag"><span class="dot dot-xhs"></span>小红书</span>
+    </div>
+  </div>
+
+  <div class="error" id="error"></div>
+
+  <div class="card result" id="result">
+    <div class="result-header">
+      <img class="result-cover" id="resultCover" src="" alt="封面">
+      <div class="result-info">
+        <div class="result-title" id="resultTitle"></div>
+        <div class="result-meta">
+          <span class="meta-tag meta-platform" id="resultPlatform"></span>
+          <span class="meta-tag meta-type" id="resultType"></span>
+        </div>
+      </div>
+    </div>
+    <div class="image-grid" id="imageGrid"></div>
+    <div class="actions" id="actions"></div>
+  </div>
+
+  <div class="footer">
+    仅供学习交流使用 · 请勿用于商业用途
+  </div>
+</div>
+
+<script>
+const API_BASE = window.location.origin;
+const PLATFORM_NAMES = { douyin: '抖音', kuaishou: '快手', xiaohongshu: '小红书' };
+const TYPE_NAMES = { video: '视频', images: '图集' };
+
+const $ = id => document.getElementById(id);
+
+// Allow Enter key to trigger parse
+$('urlInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') parseLink();
+});
+
+async function parseLink() {
+  const url = $('urlInput').value.trim();
+  if (!url) { showError('请输入分享链接'); return; }
+
+  setLoading(true);
+  hideError();
+  hideResult();
+
+  try {
+    const resp = await fetch(`${API_BASE}/api/parse`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+
+    const data = await resp.json();
+
+    if (!data.success) {
+      showError(data.error || '解析失败，请检查链接是否正确');
+      return;
+    }
+
+    showResult(data);
+  } catch (err) {
+    showError('网络错误，请检查服务是否运行');
+  } finally {
+    setLoading(false);
+  }
+}
+
+function showResult(data) {
+  // Cover
+  const cover = $('resultCover');
+  if (data.cover) {
+    cover.src = data.cover;
+    cover.style.display = 'block';
+  } else {
+    cover.style.display = 'none';
+  }
+
+  // Title
+  $('resultTitle').textContent = data.title || '未知标题';
+
+  // Meta
+  $('resultPlatform').textContent = PLATFORM_NAMES[data.platform] || data.platform;
+  $('resultType').textContent = TYPE_NAMES[data.type] || data.type;
+
+  // Image grid
+  const grid = $('imageGrid');
+  grid.innerHTML = '';
+  if (data.type === 'images' && data.images && data.images.length) {
+    data.images.forEach((imgUrl, i) => {
+      const a = document.createElement('a');
+      a.href = imgUrl;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.innerHTML = `<img src="${imgUrl}" alt="图片${i+1}" loading="lazy"><div class="dl-overlay">点击查看</div>`;
+      grid.appendChild(a);
+    });
+    grid.style.display = 'grid';
+  } else {
+    grid.style.display = 'none';
+  }
+
+  // Actions
+  const actions = $('actions');
+  actions.innerHTML = '';
+
+  if (data.type === 'video' && data.video_url) {
+    const a = document.createElement('a');
+    a.className = 'btn btn-download';
+    a.href = data.video_url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = '⬇ 下载无水印视频';
+    actions.appendChild(a);
+  }
+
+  if (data.type === 'images' && data.images && data.images.length) {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-download';
+    btn.textContent = `⬇ 打开全部图片 (${data.images.length}张)`;
+    btn.onclick = () => data.images.forEach(u => window.open(u, '_blank'));
+    actions.appendChild(btn);
+  }
+
+  $('result').style.display = 'block';
+}
+
+function setLoading(on) {
+  $('parseBtn').disabled = on;
+  $('btnText').textContent = on ? '解析中...' : '解析';
+  $('spinner').style.display = on ? 'block' : 'none';
+}
+
+function showError(msg) {
+  const el = $('error');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+function hideError() { $('error').style.display = 'none'; }
+function hideResult() { $('result').style.display = 'none'; }
+</script>
+</body>
+</html>
