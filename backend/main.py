@@ -17,7 +17,8 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-from parsers import DouyinParser, KuaishouParser, XiaohongshuParser, AggregatorParser
+from parsers import DouyinParser, KuaishouParser, XiaohongshuParser, AggregatorParser, BrowserParser
+from cookie_store import save_cookie, get_cookie, clear_cookie, load_cookies
 
 # --- Rate limiter ---
 limiter = Limiter(key_func=get_remote_address)
@@ -71,10 +72,16 @@ class ParseResponse(BaseModel):
     error: str | None = None
 
 
+class CookieRequest(BaseModel):
+    platform: str
+    cookie: str = ""
+
+
 # --- Parsers registry ---
-# AggregatorParser first (uses third-party APIs, most reliable for all platforms)
-# Fall back to local parsers if aggregator fails
-PARSERS = [AggregatorParser, DouyinParser, KuaishouParser, XiaohongshuParser]
+# BrowserParser first (headless Chromium, most reliable — renders like real browser)
+# AggregatorParser as fallback (third-party APIs)
+# Local parsers as last resort
+PARSERS = [BrowserParser, AggregatorParser, DouyinParser, KuaishouParser, XiaohongshuParser]
 
 
 def _clean_url(raw: str) -> str:
@@ -93,34 +100,54 @@ async def parse_link(body: ParseRequest, request: Request):
     if not url.startswith("http"):
         return ParseResponse(success=False, error="请输入有效的链接")
 
-    # Find matching parser
-    parser = None
-    for p in PARSERS:
-        if p.can_handle(url):
-            parser = p
-            break
+    # Try each matching parser in order (fallback chain)
+    last_error = "暂不支持该平台，目前支持：抖音、快手、小红书"
+    for parser in PARSERS:
+        if not parser.can_handle(url):
+            continue
+        try:
+            result = await parser.parse(url)
+            # Validate result has actual content
+            if result.get("video_url") or result.get("images"):
+                return ParseResponse(success=True, **result)
+            # Got a result but no media — try next parser
+            last_error = "解析成功但未找到媒体内容"
+        except Exception as e:
+            last_error = f"{parser.__name__}: {str(e)[:200]}"
+            continue
 
-    if not parser:
-        return ParseResponse(
-            success=False,
-            error="暂不支持该平台，目前支持：抖音、快手、小红书",
-        )
-
-    try:
-        result = await parser.parse(url)
-        return ParseResponse(success=True, **result)
-    except ValueError as e:
-        return ParseResponse(success=False, error=str(e))
-    except Exception as e:
-        return ParseResponse(
-            success=False,
-            error=f"解析失败：{type(e).__name__} - {str(e)[:200]}",
-        )
+    return ParseResponse(success=False, error=last_error)
 
 
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "platforms": ["douyin", "kuaishou", "xiaohongshu"]}
+
+
+@app.post("/api/cookies")
+async def set_cookie(body: CookieRequest):
+    """Save or clear cookies for a platform."""
+    platform = body.platform.lower().strip()
+    if platform not in ("douyin", "kuaishou", "xiaohongshu"):
+        return {"success": False, "error": "不支持的平台"}
+    if body.cookie.strip():
+        save_cookie(platform, body.cookie)
+        return {"success": True, "message": f"{platform} Cookie已保存"}
+    else:
+        clear_cookie(platform)
+        return {"success": True, "message": f"{platform} Cookie已清除"}
+
+
+@app.get("/api/cookies")
+async def get_cookies():
+    """Get which platforms have cookies configured."""
+    all_cookies = load_cookies()
+    return {
+        "platforms": {
+            p: bool(all_cookies.get(p))
+            for p in ["douyin", "kuaishou", "xiaohongshu"]
+        }
+    }
 
 
 # --- Serve frontend ---

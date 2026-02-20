@@ -343,6 +343,24 @@ body::before {
 
   <div class="error" id="error"></div>
 
+  <!-- Cookie Settings -->
+  <div class="card" id="cookiePanel" style="display:none;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <span style="font-weight:600;font-size:0.95rem;">🍪 Cookie 设置</span>
+      <button class="btn" style="padding:6px 14px;font-size:0.8rem;" onclick="toggleCookiePanel()">关闭</button>
+    </div>
+    <p style="color:var(--text-dim);font-size:0.82rem;margin-bottom:16px;">
+      部分平台需要登录Cookie才能解析。在浏览器中登录对应平台，按F12打开开发者工具 → Network → 复制请求头中的Cookie值粘贴到下方。
+    </p>
+    <div id="cookieFields"></div>
+  </div>
+
+  <div style="text-align:center;margin-bottom:20px;">
+    <button class="btn" style="padding:8px 20px;font-size:0.82rem;background:var(--surface);border:1px solid var(--glass-border);" onclick="toggleCookiePanel()">
+      ⚙️ Cookie 设置
+    </button>
+  </div>
+
   <div class="card result" id="result">
     <div class="result-header">
       <img class="result-cover" id="resultCover" src="" alt="封面">
@@ -477,6 +495,83 @@ function showError(msg) {
 }
 function hideError() { $('error').style.display = 'none'; }
 function hideResult() { $('result').style.display = 'none'; }
+
+// --- Cookie Management ---
+const COOKIE_PLATFORMS = [
+  { id: 'xiaohongshu', name: '小红书', domain: 'xiaohongshu.com' },
+  { id: 'douyin', name: '抖音', domain: 'douyin.com' },
+  { id: 'kuaishou', name: '快手', domain: 'kuaishou.com' },
+];
+
+function toggleCookiePanel() {
+  const panel = $('cookiePanel');
+  if (panel.style.display === 'none') {
+    panel.style.display = 'block';
+    loadCookieStatus();
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+async function loadCookieStatus() {
+  const fields = $('cookieFields');
+  fields.innerHTML = '';
+  let status = {};
+  try {
+    const resp = await fetch(`${API_BASE}/api/cookies`);
+    const data = await resp.json();
+    status = data.platforms || {};
+  } catch(e) {}
+
+  COOKIE_PLATFORMS.forEach(p => {
+    const has = status[p.id];
+    const div = document.createElement('div');
+    div.style.cssText = 'margin-bottom:14px;';
+    div.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="font-size:0.88rem;font-weight:500;">${p.name}</span>
+        <span style="font-size:0.75rem;padding:2px 8px;border-radius:4px;background:${has ? 'rgba(0,206,201,0.2)' : 'rgba(255,107,107,0.2)'};color:${has ? '#00cec9' : '#ff6b6b'};">${has ? '已配置' : '未配置'}</span>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="cookie_${p.id}" placeholder="粘贴 ${p.domain} 的Cookie..." style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px 12px;color:var(--text);font-size:0.85rem;outline:none;">
+        <button class="btn btn-primary" style="padding:8px 16px;font-size:0.82rem;" onclick="saveCookie('${p.id}')">保存</button>
+        ${has ? `<button class="btn" style="padding:8px 12px;font-size:0.82rem;background:rgba(255,107,107,0.15);color:#ff6b6b;" onclick="clearCookieFor('${p.id}')">清除</button>` : ''}
+      </div>
+    `;
+    fields.appendChild(div);
+  });
+}
+
+async function saveCookie(platform) {
+  const input = $(`cookie_${platform}`);
+  const cookie = input.value.trim();
+  if (!cookie) { showError('请输入Cookie'); return; }
+  try {
+    const resp = await fetch(`${API_BASE}/api/cookies`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platform, cookie }),
+    });
+    const data = await resp.json();
+    if (data.success) {
+      input.value = '';
+      loadCookieStatus();
+    } else {
+      showError(data.error || '保存失败');
+    }
+  } catch(e) { showError('网络错误'); }
+}
+
+async function clearCookieFor(platform) {
+  try {
+    await fetch(`${API_BASE}/api/cookies`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platform, cookie: '' }),
+    });
+    loadCookieStatus();
+  } catch(e) {}
+}
 </script>
 </body>
 </html>
